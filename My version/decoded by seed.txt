@@ -1,0 +1,110 @@
+import numpy as np
+from ast import literal_eval
+from itertools import chain
+import string
+from typing import List, Optional
+
+# Настройки (подставьте свои значения)
+starting_seed = 9     # первый seed
+rainbowRow = 20       # сколько последовательных сидов перебрать
+LenNumber = 220       # длина генерируемого массива (как у вашего JackBack)
+max_value = 180       # максимальное значение в массиве (по вашей выборке)
+
+# Генерация массива по сиду (поведение максимально близко к простому np.random.seed + randint)
+def generate_random_array(seed: int, length: int, max_value: int = 255) -> List[int]:
+    np.random.seed(seed)
+    return np.random.randint(0, max_value + 1, size=length).tolist()
+
+# Декодирование массива по вашей логике: sdf = max(arr) - 10, первые сегменты -> коды символов,
+# последующие сегменты -> списки индексов для соответствующих символов
+def decode_from_array(arr: List[int]) -> Optional[str]:
+    if not arr:
+        return None
+
+    sdf = max(arr) - 10
+    # позиции разделителя
+    sep_pos = [i for i, v in enumerate(arr) if v == sdf]
+    if not sep_pos:
+        return None
+
+    # разбиваем по разделителю (сами разделители исключаем)
+    segments = []
+    prev = 0
+    for p in sep_pos:
+        segments.append(arr[prev:p])
+        prev = p + 1
+    if prev < len(arr):
+        segments.append(arr[prev:])
+
+    # удалить пустые сегменты
+    segments = [s for s in segments if s]
+    if not segments:
+        return None
+
+    # первый сегмент — коды символов
+    symbol_codes = segments[0]
+    try:
+        symbols = [chr(int(c)) for c in symbol_codes]
+    except Exception:
+        return None
+
+    index_lists = segments[1:]
+    if not index_lists:
+        return ''.join(symbols)
+
+    # найти максимальный индекс для размера результата
+    try:
+        max_index = max((max(lst) for lst in index_lists if lst), default=-1)
+    except ValueError:
+        return None
+
+    if max_index < 0:
+        return ''.join(symbols)
+
+    result = ['?' for _ in range(max_index + 1)]
+    for sym, idxs in zip(symbols, index_lists):
+        for idx in idxs:
+            if not isinstance(idx, int) or idx < 0:
+                continue
+            if idx >= len(result):
+                result.extend('?' * (idx - len(result) + 1))
+            result[idx] = sym
+
+    return ''.join(result)
+
+# Небольшой фильтр — оставляем строки, в которых большая часть печатных символов
+def is_mostly_printable(s: str, threshold: float = 0.9) -> bool:
+    if not s:
+        return False
+    printable_count = sum(1 for ch in s if ch in string.printable)
+    return (printable_count / len(s)) >= threshold
+
+# Перебор сидов и вывод результатов
+def search_from_seed(start_seed: int, rainbow_row: int, length: int, max_val: int):
+    for seed in range(start_seed, start_seed + rainbow_row):
+        arr = generate_random_array(seed, length, max_val)
+        decoded = decode_from_array(arr)
+        if decoded is None:
+            print(f"seed={seed}: разделитель (sdf) не найден или декодирование не удалось")
+        else:
+            status = "[ПРОХОДИТ ФИЛЬТР]" if is_mostly_printable(decoded) else "[непечатные символы]"
+            print(f"seed={seed} {status}: {decoded}")
+
+# --- Доп. возможность: декодирование вашего существующего JackBack (строка) ---
+def decode_jackback_string(jackback_str: str):
+    try:
+        jb_list = literal_eval(jackback_str)
+    except Exception as e:
+        print("Не удалось распарсить JackBack:", e)
+        return
+    decoded = decode_from_array(jb_list)
+    print("JackBack ->", decoded)
+
+# Запуск
+if __name__ == "__main__":
+    # Если хотите сначала протестировать исходную строку JackBack, раскомментируйте и вставьте её:
+    # JackBack = "..."  # ваша строка
+    # decode_jackback_string(JackBack)
+
+    # Запускаем перебор сидов
+    search_from_seed(starting_seed, rainbowRow, LenNumber, max_value)
